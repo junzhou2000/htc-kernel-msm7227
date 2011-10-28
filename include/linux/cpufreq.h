@@ -200,7 +200,7 @@ int lock_policy_rwsem_read(int cpu);
 int lock_policy_rwsem_write(int cpu);
 void unlock_policy_rwsem_read(int cpu);
 void unlock_policy_rwsem_write(int cpu);
-
+int trylock_policy_rwsem_write(int cpu);
 
 /*********************************************************************
  *                      CPUFREQ DRIVER INTERFACE                     *
@@ -235,7 +235,7 @@ struct cpufreq_driver {
 	int	(*bios_limit)	(int cpu, unsigned int *limit);
 
 	int	(*exit)		(struct cpufreq_policy *policy);
-	int	(*suspend)	(struct cpufreq_policy *policy, pm_message_t pmsg);
+	int	(*suspend)	(struct cpufreq_policy *policy);
 	int	(*resume)	(struct cpufreq_policy *policy);
 	struct freq_attr	**attr;
 };

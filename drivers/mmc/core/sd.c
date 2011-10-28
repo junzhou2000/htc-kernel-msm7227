@@ -499,12 +499,12 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (mmc_card_highspeed(card)) {
 		if (max_dtr > card->sw_caps.hs_max_dtr) {
 			max_dtr = card->sw_caps.hs_max_dtr;
-			printk(KERN_WARNING "%s: high speed mode but max_dtr = %d\n",
+			printk(KERN_WARNING "%s: high speed mode max_dtr = %d\n",
 				       mmc_hostname(host), max_dtr);
 		}
 	} else if (max_dtr > card->csd.max_dtr) {
 		max_dtr = card->csd.max_dtr;
-		printk(KERN_WARNING "%s: non-hight speed mode max_dtr = %d\n",
+		printk(KERN_WARNING "%s: non-high speed mode max_dtr = %d\n",
 			mmc_hostname(host), max_dtr);
 	}
 
@@ -559,7 +559,10 @@ static void mmc_sd_remove(struct mmc_host *host)
 	BUG_ON(!host->card);
 
 	mmc_remove_card(host->card);
+
+	mmc_claim_host(host);
 	host->card = NULL;
+	mmc_release_host(host);
 }
 
 /*
@@ -574,6 +577,13 @@ static void mmc_sd_detect(struct mmc_host *host)
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
+
+	if (host->ops->get_cd && host->ops->get_cd(host) == 0) {
+		err = -1;
+		printk(KERN_WARNING "[SD] %s: %s goto no_card.\n", __FILE__, __func__);
+
+		goto no_card;
+	}
 
 	mmc_claim_host(host);
 
@@ -599,6 +609,7 @@ static void mmc_sd_detect(struct mmc_host *host)
 #endif
 	mmc_release_host(host);
 
+no_card:
 	if (err) {
 		mmc_sd_remove(host);
 
@@ -711,7 +722,7 @@ static void mmc_sd_attach_bus_ops(struct mmc_host *host)
 {
 	const struct mmc_bus_ops *bus_ops;
 
-	if (host->caps & MMC_CAP_NONREMOVABLE || !mmc_assume_removable)
+	if (!mmc_card_is_removable(host))
 		bus_ops = &mmc_sd_ops_unsafe;
 	else
 		bus_ops = &mmc_sd_ops;
