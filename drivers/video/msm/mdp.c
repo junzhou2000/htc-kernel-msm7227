@@ -524,10 +524,6 @@ static void mdp_dma_to_mddi(void *priv, uint32_t addr, uint32_t stride,
 	} else if (mdp->mdp_dev.color_format == MSM_MDP_OUT_IF_FMT_RGB666) {
 		dma2_cfg |= DMA_DSTC0G_6BITS | DMA_DSTC1B_6BITS | DMA_DSTC2R_6BITS;
 		video_packet_parameter = MDDI_VDO_PACKET_DESC_RGB666;
-<<<<<<< HEAD
-=======
-#if !defined(CONFIG_ARCH_MSM7X00A) && !defined(CONFIG_ARCH_MSM7225)
->>>>>>> 4e4ab35... msm: mdp: Fix ifdef check to avoid compile error
 	} else {
 		dma2_cfg |= DMA_IBUF_FORMAT_XRGB8888;
 		dma2_cfg |= DMA_DSTC0G_8BITS | DMA_DSTC1B_8BITS | DMA_DSTC2R_8BITS;
