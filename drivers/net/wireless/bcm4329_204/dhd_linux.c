@@ -995,6 +995,15 @@ dhd_start_xmit(struct sk_buff *skb, struct net_device *net)
 	int ifidx;
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+<<<<<<< HEAD
+=======
+	if (module_remove) {
+		DHD_ERROR(("%s: module removed.", __FUNCTION__));
+		netif_stop_queue(net);
+		dev_kfree_skb(skb); // Add to free skb
+		return -ENODEV;
+	}
+>>>>>>> 78c9aa1... Merge updates via HTC's chacha-2.6.35-crc
 
 	/* Reject if down */
 	if (!dhd->pub.up || (dhd->pub.busstate == DHD_BUS_DOWN)) {
@@ -1079,6 +1088,23 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt)
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
+<<<<<<< HEAD
+=======
+	if (module_remove || (!dhd->pub.up)) {
+		for (i = 0; pktbuf && i < numpkt; i++, pktbuf = pnext) {
+			pnext = PKTNEXT(dhdp->osh, pktbuf);
+			PKTSETNEXT(wl->sh.osh, pktbuf, NULL);
+			skb = PKTTONATIVE(dhdp->osh, pktbuf);
+			dev_kfree_skb_any(skb);
+		}
+		if (dhd->pub.up != 1)
+			DHD_ERROR(("%s: dongle not up, skip\n", __FUNCTION__));
+		else
+			DHD_ERROR(("%s: module removed. skip rx frame\n", __FUNCTION__));
+		return;
+	}
+
+>>>>>>> 78c9aa1... Merge updates via HTC's chacha-2.6.35-crc
 	save_pktbuf = pktbuf;
 
 	for (i = 0; pktbuf && i < numpkt; i++, pktbuf = pnext) {
