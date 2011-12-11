@@ -85,14 +85,10 @@ static ssize_t enable_store(
 	struct usb_function *f = dev_get_drvdata(dev);
 	struct usb_composite_driver	*driver = f->config->cdev->driver;
 	int value;
-	int rc;
 
 	sscanf(buf, "%d", &value);
-	if (driver->enable_function) {
-		rc = driver->enable_function(f, value);
-		if (rc < 0)
-			return rc;
-	}
+	if (driver->enable_function)
+		driver->enable_function(f, value);
 	else
 		usb_function_set_enabled(f, value);
 

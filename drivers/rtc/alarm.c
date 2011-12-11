@@ -69,13 +69,11 @@ struct alarm_queue alarms[ANDROID_ALARM_TYPE_COUNT];
 static bool suspended;
 
 #ifdef CONFIG_BUILD_CIQ
-/* get xtal when first query after resume
- * real_ticks would be (system_time - first query time + xtal_ticks) ==
- * system_time - (first query time - xtal_ticks)
+/* real_ticks would be (system_time - resume_system_time + xtal_ticks) ==
+ * system_time - (resume_system_time - xtal_ticks)
  */
 static struct timespec elapsed_real_ticks_offset;
 static DEFINE_MUTEX(alarm_ticksoffset_mutex);
-static int already_read_ticks = 0;
 #endif
 
 static void update_timer_locked(struct alarm_queue *base, bool head_removed)
@@ -343,14 +341,8 @@ int alarm_get_elapsed_ticks(struct timespec *elapsed_ticks)
 {
 	struct timespec tmp_time;
 
-	mutex_lock(&alarm_ticksoffset_mutex);
 	getnstimeofday(&tmp_time);
-	if (!already_read_ticks) {
-		rtc_read_ticks(alarm_rtc_dev, &elapsed_real_ticks_offset);
-		elapsed_real_ticks_offset =
-			timespec_sub(tmp_time, elapsed_real_ticks_offset);
-		already_read_ticks = 1;
-	}
+	mutex_lock(&alarm_ticksoffset_mutex);
 	*elapsed_ticks = timespec_sub(tmp_time, elapsed_real_ticks_offset);
 	mutex_unlock(&alarm_ticksoffset_mutex);
 	return 0;
@@ -484,6 +476,9 @@ static int alarm_resume(struct platform_device *pdev)
 {
 	struct rtc_wkalrm alarm;
 	unsigned long       flags;
+#ifdef CONFIG_BUILD_CIQ
+	struct timespec tmp_time;
+#endif
 
 	pr_alarm(SUSPEND, "alarm_resume(%p)\n", pdev);
 
@@ -497,10 +492,12 @@ static int alarm_resume(struct platform_device *pdev)
 	update_timer_locked(&alarms[ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP],
 									false);
 	spin_unlock_irqrestore(&alarm_slock, flags);
-
 #ifdef CONFIG_BUILD_CIQ
+	getnstimeofday(&tmp_time);
 	mutex_lock(&alarm_ticksoffset_mutex);
-	already_read_ticks = 0;
+	rtc_read_ticks(alarm_rtc_dev, &elapsed_real_ticks_offset);
+	elapsed_real_ticks_offset =
+		timespec_sub(tmp_time, elapsed_real_ticks_offset);
 	mutex_unlock(&alarm_ticksoffset_mutex);
 #endif
 	return 0;
@@ -588,6 +585,13 @@ static int __init alarm_late_init(void)
 			timespec_to_ktime(timespec_sub(tmp_time, system_time));
 	spin_unlock_irqrestore(&alarm_slock, flags);
 
+#ifdef CONFIG_BUILD_CIQ
+	mutex_lock(&alarm_ticksoffset_mutex);
+	rtc_read_ticks(alarm_rtc_dev, &elapsed_real_ticks_offset);
+	elapsed_real_ticks_offset =
+		timespec_sub(tmp_time, elapsed_real_ticks_offset);
+	mutex_unlock(&alarm_ticksoffset_mutex);
+#endif
 	return 0;
 }
 

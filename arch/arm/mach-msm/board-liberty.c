@@ -847,12 +847,13 @@ extern unsigned char *get_bt_bd_ram(void);
 
 static void bt_export_bd_address(void)
 {
-	unsigned char cTemp[6];
 
-	memcpy(cTemp, get_bt_bd_ram(), 6);
-	sprintf(bdaddr, "%02x:%02x:%02x:%02x:%02x:%02x",
-		cTemp[0], cTemp[1], cTemp[2], cTemp[3], cTemp[4], cTemp[5]);
-	printk(KERN_INFO "BT HW address=%s\n", bdaddr);
+  unsigned char cTemp[6];
+
+  memcpy(cTemp, get_bt_bd_ram(), 6);
+  sprintf(bdaddr, "%02x:%02x:%02x:%02x:%02x:%02x",
+    cTemp[0], cTemp[1], cTemp[2], cTemp[3], cTemp[4], cTemp[5]);
+  printk(KERN_INFO "BT HW address=%s\n", bdaddr);
 }
 
 module_param_string(bdaddr, bdaddr, sizeof(bdaddr), S_IWUSR | S_IRUGO);

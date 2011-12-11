@@ -138,6 +138,5 @@
 int __init marvel_init_keypad(void);
 int marvel_init_mmc(unsigned int sys_rev);
 int __init marvel_init_panel(void);
-int __init marvel_wifi_init(void);
 #endif /* GUARD */
 

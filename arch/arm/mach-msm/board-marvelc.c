@@ -56,6 +56,10 @@
 #include <mach/board.h>
 #include <mach/board_htc.h>
 #include <mach/msm_serial_hs.h>
+#ifdef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
+#include <mach/bcm_bt_lpm.h>
+#endif
+
 #include <mach/atmega_microp.h>
 #include <mach/htc_battery.h>
 #include <linux/tps65200.h>
@@ -65,6 +69,7 @@
 #include <mach/camera.h>
 #include <mach/msm_serial_debugger.h>
 #include <mach/msm_iomap.h>
+#include <mach/usbdiag.h>
 #include <mach/msm_hsusb.h>
 #include <mach/htc_usb.h>
 #include <mach/htc_headset_mgr.h>
@@ -111,14 +116,6 @@ static struct htc_headset_microp_platform_data htc_headset_microp_data = {
 	.adc_remote		= {0, 33, 38, 82, 95, 167},
 };
 
-static struct htc_headset_microp_platform_data htc_headset_microp_data_xb = {
-	.remote_int		= 1 << 13,
-	.remote_irq		= MSM_uP_TO_INT(13),
-	.remote_enable_pin	= 0,
-	.adc_channel		= 0x01,
-	.adc_remote		= {0, 33, 38, 102, 152, 224},
-};
-
 static struct platform_device htc_headset_microp = {
 	.name	= "HTC_HEADSET_MICROP",
 	.id	= -1,
@@ -134,35 +131,9 @@ static struct platform_device *headset_devices[] = {
 	/* Please put the headset detection driver on the last */
 };
 
-static struct headset_adc_config htc_headset_mgr_config[] = {
-	{
-		.type = HEADSET_MIC,
-		.adc_max = 942,
-		.adc_min = 649,
-	},
-	{
-		.type = HEADSET_BEATS,
-		.adc_max = 648,
-		.adc_min = 491,
-	},
-	{
-		.type = HEADSET_MIC,
-		.adc_max = 490,
-		.adc_min = 225,
-	},
-	{
-		.type = HEADSET_NO_MIC,
-		.adc_max = 224,
-		.adc_min = 0,
-	},
-};
-
 static struct htc_headset_mgr_platform_data htc_headset_mgr_data = {
-	.driver_flag		= 0,
 	.headset_devices_num	= ARRAY_SIZE(headset_devices),
 	.headset_devices	= headset_devices,
-	.headset_config_num	= 0,
-	.headset_config		= 0,
 };
 
 static struct htc_battery_platform_data htc_battery_pdev_data = {
@@ -307,8 +278,8 @@ struct cy8c_i2c_platform_data marvelc_ts_cy8c_data[] = {
 
 static int marvelc_phy_init_seq[] =
 {
-	0x2C, 0x31,
-	0x28, 0x32,
+	0x0C, 0x31,
+	0x08, 0x32,
 	0x1D, 0x0D,
 	0x1D, 0x10,
 	-1
@@ -367,9 +338,25 @@ static struct platform_device usb_mass_storage_device = {
 	},
 };
 
+#ifdef CONFIG_USB_ANDROID_RNDIS
+static struct usb_ether_platform_data rndis_pdata = {
+	/* ethaddr is filled by board_serialno_setup */
+	.vendorID	= 0x18d1,
+	.vendorDescr	= "Google, Inc.",
+};
+
+static struct platform_device rndis_device = {
+	.name	= "rndis",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &rndis_pdata,
+	},
+};
+#endif
+
 static struct android_usb_platform_data android_usb_pdata = {
 	.vendor_id	= 0x0bb4,
-	.product_id	= 0x0cc0,
+	.product_id	= 0x0cb0,
 	.version	= 0x0100,
 	.product_name		= "Android Phone",
 	.manufacturer_name	= "HTC",
@@ -709,8 +696,68 @@ static struct platform_device marvelc_flashlight_device = {
 	},
 };
 
+#if defined(CONFIG_SERIAL_MSM_HS) && defined(CONFIG_SERIAL_MSM_HS_PURE_ANDROID)
+static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
+        .rx_wakeup_irq = -1,
+        .inject_rx_on_wakeup = 0,
+        .exit_lpm_cb = bcm_bt_lpm_exit_lpm_locked,
+};
+
+static struct bcm_bt_lpm_platform_data bcm_bt_lpm_pdata = {
+        .gpio_wake = MARVELC_GPIO_BT_CHIP_WAKE,
+        .gpio_host_wake = MARVELC_GPIO_BT_HOST_WAKE,
+        .request_clock_off_locked = msm_hs_request_clock_off_locked,
+        .request_clock_on_locked = msm_hs_request_clock_on_locked,
+};
+
+struct platform_device marvelc_bcm_bt_lpm_device = {
+        .name = "bcm_bt_lpm",
+        .id = 0,
+        .dev = {
+                .platform_data = &bcm_bt_lpm_pdata,
+        },
+};
+
+#define ATAG_BDADDR 0x43294329  /* mahimahi bluetooth address tag */
+#define ATAG_BDADDR_SIZE 4
+#define BDADDR_STR_SIZE 18
+
+static char bdaddr[BDADDR_STR_SIZE];
+extern unsigned char *get_bt_bd_ram(void);
+
+static void bt_export_bd_address(void)
+{
+
+  unsigned char cTemp[6];
+
+  memcpy(cTemp, get_bt_bd_ram(), 6);
+  sprintf(bdaddr, "%02x:%02x:%02x:%02x:%02x:%02x",
+    cTemp[0], cTemp[1], cTemp[2], cTemp[3], cTemp[4], cTemp[5]);
+  printk(KERN_INFO "BT HW address=%s\n", bdaddr);
+}
+
+module_param_string(bdaddr, bdaddr, sizeof(bdaddr), S_IWUSR | S_IRUGO);
+MODULE_PARM_DESC(bdaddr, "bluetooth address");
+
+#elif defined(CONFIG_SERIAL_MSM_HS)
+static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
+	.wakeup_irq = MSM_GPIO_TO_INT(MARVEL_GPIO_BT_HOST_WAKE),
+	.inject_rx_on_wakeup = 0,
+	.cpu_lock_supported = 1,
+
+	/* for bcm */
+	.bt_wakeup_pin_supported = 1,
+	.bt_wakeup_pin = MARVEL_GPIO_BT_CHIP_WAKE,
+	.host_wakeup_pin = MARVEL_GPIO_BT_HOST_WAKE,
+
+};
+#endif
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_i2c,
+#ifdef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
+        &marvelc_bcm_bt_lpm_device,
+#endif
 	&htc_battery_pdev,
 	&msm_camera_sensor_s5k4e1gx,
 	&marvelc_rfkill,
@@ -812,7 +859,7 @@ void config_marvelc_camera_off_gpios(void)
 	config_gpio_table(camera_off_gpio_table,
 		ARRAY_SIZE(camera_off_gpio_table));
 }
-
+#ifndef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
 /* for bcm */
 static char bdaddress[20];
 extern unsigned char *get_bt_bd_ram(void);
@@ -829,6 +876,7 @@ static void bt_export_bd_address(void)
 
 module_param_string(bdaddress, bdaddress, sizeof(bdaddress), S_IWUSR | S_IRUGO);
 MODULE_PARM_DESC(bdaddress, "BT MAC ADDRESS");
+#endif
 
 static uint32_t marvelc_serial_debug_table[] = {
 	/* config as serial debug uart */
@@ -868,20 +916,6 @@ static struct perflock_platform_data marvelc_perflock_data = {
 	.perf_acpu_table = marvelc_perf_acpu_table,
 	.table_size = ARRAY_SIZE(marvelc_perf_acpu_table),
 };
-
-#ifdef CONFIG_SERIAL_MSM_HS
-static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
-	.rx_wakeup_irq = MSM_GPIO_TO_INT(MARVELC_GPIO_BT_HOST_WAKE),
-	.inject_rx_on_wakeup = 0,
-	.cpu_lock_supported = 1,
-
-	/* for bcm */
-	.bt_wakeup_pin_supported = 1,
-	.bt_wakeup_pin = MARVELC_GPIO_BT_CHIP_WAKE,
-	.host_wakeup_pin = MARVELC_GPIO_BT_HOST_WAKE,
-
-};
-#endif
 
 static ssize_t marvelc_virtual_keys_show(struct kobject *kobj,
 			struct kobj_attribute *attr, char *buf)
@@ -953,7 +987,9 @@ static void __init marvelc_init(void)
 
 #ifdef CONFIG_SERIAL_MSM_HS
 	msm_device_uart_dm1.dev.platform_data = &msm_uart_dm1_pdata;
+#ifndef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
 	msm_device_uart_dm1.name = "msm_serial_hs_bcm";	/* for bcm */
+#endif
 	msm_add_serial_devices(3);
 #else
 	msm_add_serial_devices(0);
@@ -976,6 +1012,9 @@ static void __init marvelc_init(void)
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	config_marvelc_usb_id_gpios(0);
 	platform_device_register(&msm_device_hsusb);
+#ifdef CONFIG_USB_ANDROID_RNDIS
+	platform_device_register(&rndis_device);
+#endif
 	platform_device_register(&usb_mass_storage_device);
 	platform_device_register(&android_usb_device);
 #endif
@@ -996,17 +1035,6 @@ static void __init marvelc_init(void)
 	if (!properties_kobj || rc)
 		pr_err("failed to create board_properties\n");
 
-	printk(KERN_INFO "[HS_BOARD] (%s) system_rev = %d\n", __func__,
-	       system_rev);
-	if (system_rev >= 1) {
-		htc_headset_microp.dev.platform_data =
-			&htc_headset_microp_data_xb;
-		htc_headset_mgr_data.headset_config_num =
-			ARRAY_SIZE(htc_headset_mgr_config);
-		htc_headset_mgr_data.headset_config = htc_headset_mgr_config;
-		printk(KERN_INFO "[HS_BOARD] (%s) Set MEMS config\n", __func__);
-	}
-
 	/* probe camera driver */
 	i2c_register_board_info(0, i2c_camera_devices, ARRAY_SIZE(i2c_camera_devices));
 
@@ -1022,9 +1050,7 @@ static void __init marvelc_init(void)
 
 	marvelc_init_keypad();
 
-	marvelc_wifi_init();
-
-	msm_init_pmic_vibrator(2800);
+		msm_init_pmic_vibrator(2800);
 }
 
 static void __init marvelc_fixup(struct machine_desc *desc, struct tag *tags,

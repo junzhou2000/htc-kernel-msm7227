@@ -87,7 +87,7 @@ void arm_notify_die(const char *str, struct pt_regs *regs, struct siginfo *info,
 
 void hook_fault_code(int nr, int (*fn)(unsigned long, unsigned int,
 				       struct pt_regs *),
-		     int sig, int code, const char *name);
+		     int sig, const char *name);
 
 #define xchg(ptr,x) \
 	((__typeof__(*(ptr)))__xchg((unsigned long)(x),(ptr),sizeof(*(ptr))))
@@ -128,8 +128,9 @@ extern unsigned int user_debug;
 				    : : "r" (0) : "memory")
 #define dsb() __asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 4" \
 				    : : "r" (0) : "memory")
-#define dmb() __asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 5" \
-				    : : "r" (0) : "memory")
+#define dmb() do { __asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 5" \
+				: : "r" (0) : "memory"); \
+				arch_barrier_extra(); } while (0)
 #elif defined(CONFIG_CPU_FA526)
 #define isb() __asm__ __volatile__ ("mcr p15, 0, %0, c7, c5, 4" \
 				    : : "r" (0) : "memory")

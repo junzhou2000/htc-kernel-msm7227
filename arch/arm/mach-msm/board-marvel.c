@@ -26,7 +26,6 @@
 #include <linux/himax8250.h>
 #include <linux/akm8975.h>
 #include <linux/bma150.h>
-#include <linux/bma250.h>
 #include <linux/cm3628.h>
 #include <linux/sysdev.h>
 #include <linux/android_pmem.h>
@@ -58,6 +57,10 @@
 #include <mach/board.h>
 #include <mach/board_htc.h>
 #include <mach/msm_serial_hs.h>
+#ifdef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
+#include <mach/bcm_bt_lpm.h>
+#endif
+
 #include <mach/atmega_microp.h>
 #include <mach/htc_battery.h>
 #include <linux/tps65200.h>
@@ -226,17 +229,6 @@ static struct bma150_platform_data marvel_g_sensor_pdata = {
 	.chip_layout = 0,
 };
 
-static struct bma250_platform_data gsensor_bma250_platform_data = {
-	.chip_layout = 0,
-};
-
-static struct i2c_board_info i2c_bma250_devices[] = {
-	{
-		I2C_BOARD_INFO(BMA250_I2C_NAME, 0x30 >> 1),
-		.platform_data = &gsensor_bma250_platform_data,
-	},
-};
-
 static struct platform_device microp_devices[] = {
 	{
 		.name		= "leds-microp",
@@ -260,37 +252,11 @@ static struct platform_device microp_devices[] = {
 	},
 };
 
-static struct platform_device microp_devices_B14[] = {
-	{
-		.name		= "leds-microp",
-		.id		= -1,
-		.dev		= {
-			.platform_data	= &microp_leds_data,
-		},
-	},
-	{
-		.name	= "HTC_HEADSET_MGR",
-		.id	= -1,
-		.dev	= {
-			.platform_data	= &htc_headset_mgr_data,
-		},
-	},
-};
-
 static struct microp_i2c_platform_data microp_data = {
 	.num_functions   = ARRAY_SIZE(microp_functions),
 	.microp_function = microp_functions,
 	.num_devices = ARRAY_SIZE(microp_devices),
 	.microp_devices = microp_devices,
-	.gpio_reset = MARVEL_GPIO_UP_RESET_N,
-	.spi_devices = SPI_GSENSOR,
-};
-
-static struct microp_i2c_platform_data microp_data_B14 = {
-	.num_functions   = ARRAY_SIZE(microp_functions),
-	.microp_function = microp_functions,
-	.num_devices = ARRAY_SIZE(microp_devices_B14),
-	.microp_devices = microp_devices_B14,
 	.gpio_reset = MARVEL_GPIO_UP_RESET_N,
 	.spi_devices = SPI_GSENSOR,
 };
@@ -496,6 +462,22 @@ static struct platform_device usb_mass_storage_device = {
 	},
 };
 
+#ifdef CONFIG_USB_ANDROID_RNDIS
+static struct usb_ether_platform_data rndis_pdata = {
+	/* ethaddr is filled by board_serialno_setup */
+	.vendorID	= 0x18d1,
+	.vendorDescr	= "Google, Inc.",
+};
+
+static struct platform_device rndis_device = {
+	.name	= "rndis",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &rndis_pdata,
+	},
+};
+#endif
+
 static struct android_usb_platform_data android_usb_pdata = {
 	.vendor_id	= 0x0bb4,
 	.product_id	= 0x0cb0,
@@ -612,38 +594,6 @@ static struct i2c_board_info i2c_devices[] = {
 	{
 		I2C_BOARD_INFO(MICROP_I2C_NAME, 0xCC >> 1),
 		.platform_data = &microp_data,
-		.irq = MARVEL_GPIO_TO_INT(MARVEL_GPIO_UP_INT_N)
-	},
-	{
-		I2C_BOARD_INFO("tps65200", 0xD4 >> 1),
-		.platform_data = &tps65200_data,
-	},
-	{
-		I2C_BOARD_INFO(CM3628_I2C_NAME, 0xC0 >> 1),
-		.platform_data = &cm3628_pdata,
-		.irq = MSM_GPIO_TO_INT(MARVEL_GPIO_PROXIMITY_INT),
-	},
-	{
-		I2C_BOARD_INFO(AKM8975_I2C_NAME, 0x1A >> 1),
-		.platform_data = &compass_platform_data,
-		.irq = MARVEL_GPIO_TO_INT(MARVEL_GPIO_COMPASS_RDY),
-	},
-};
-
-static struct i2c_board_info i2c_devices_B14[] = {
-	{
-		I2C_BOARD_INFO(CYPRESS_TMA_NAME, 0x67),
-		.platform_data = &marvel_ts_cy8c_data,
-		.irq = MSM_GPIO_TO_INT(MARVEL_GPIO_TP_ATT_N)
-	},
-	{
-		I2C_BOARD_INFO(HIMAX8250_NAME, 0x90 >> 1),
-		.platform_data = &marvel_ts_himax_data,
-		.irq = MSM_GPIO_TO_INT(MARVEL_GPIO_TP_ATT_N)
-	},
-	{
-		I2C_BOARD_INFO(MICROP_I2C_NAME, 0xCC >> 1),
-		.platform_data = &microp_data_B14,
 		.irq = MARVEL_GPIO_TO_INT(MARVEL_GPIO_UP_INT_N)
 	},
 	{
@@ -877,8 +827,68 @@ static struct platform_device marvel_flashlight_device = {
 	},
 };
 
+#if defined(CONFIG_SERIAL_MSM_HS) && defined(CONFIG_SERIAL_MSM_HS_PURE_ANDROID)
+static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
+        .rx_wakeup_irq = -1,
+        .inject_rx_on_wakeup = 0,
+        .exit_lpm_cb = bcm_bt_lpm_exit_lpm_locked,
+};
+
+static struct bcm_bt_lpm_platform_data bcm_bt_lpm_pdata = {
+        .gpio_wake = MARVEL_GPIO_BT_CHIP_WAKE,
+        .gpio_host_wake = MARVEL_GPIO_BT_HOST_WAKE,
+        .request_clock_off_locked = msm_hs_request_clock_off_locked,
+        .request_clock_on_locked = msm_hs_request_clock_on_locked,
+};
+
+struct platform_device marvel_bcm_bt_lpm_device = {
+        .name = "bcm_bt_lpm",
+        .id = 0,
+        .dev = {
+                .platform_data = &bcm_bt_lpm_pdata,
+        },
+};
+
+#define ATAG_BDADDR 0x43294329  /* mahimahi bluetooth address tag */
+#define ATAG_BDADDR_SIZE 4
+#define BDADDR_STR_SIZE 18
+
+static char bdaddr[BDADDR_STR_SIZE];
+extern unsigned char *get_bt_bd_ram(void);
+
+static void bt_export_bd_address(void)
+{
+
+  unsigned char cTemp[6];
+
+  memcpy(cTemp, get_bt_bd_ram(), 6);
+  sprintf(bdaddr, "%02x:%02x:%02x:%02x:%02x:%02x",
+    cTemp[0], cTemp[1], cTemp[2], cTemp[3], cTemp[4], cTemp[5]);
+  printk(KERN_INFO "BT HW address=%s\n", bdaddr);
+}
+
+module_param_string(bdaddr, bdaddr, sizeof(bdaddr), S_IWUSR | S_IRUGO);
+MODULE_PARM_DESC(bdaddr, "bluetooth address");
+
+#elif defined(CONFIG_SERIAL_MSM_HS)
+static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
+	.wakeup_irq = MSM_GPIO_TO_INT(MARVEL_GPIO_BT_HOST_WAKE),
+	.inject_rx_on_wakeup = 0,
+	.cpu_lock_supported = 1,
+
+	/* for bcm */
+	.bt_wakeup_pin_supported = 1,
+	.bt_wakeup_pin = MARVEL_GPIO_BT_CHIP_WAKE,
+	.host_wakeup_pin = MARVEL_GPIO_BT_HOST_WAKE,
+
+};
+#endif
+
 static struct platform_device *devices[] __initdata = {
 	&msm_device_i2c,
+#ifdef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
+        &marvel_bcm_bt_lpm_device,
+#endif
 	&htc_battery_pdev,
 	&msm_camera_sensor_s5k4e1gx,
 	&marvel_rfkill,
@@ -980,7 +990,7 @@ void config_marvel_camera_off_gpios(void)
 	config_gpio_table(camera_off_gpio_table,
 		ARRAY_SIZE(camera_off_gpio_table));
 }
-
+#ifndef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
 /* for bcm */
 static char bdaddress[20];
 extern unsigned char *get_bt_bd_ram(void);
@@ -997,6 +1007,7 @@ static void bt_export_bd_address(void)
 
 module_param_string(bdaddress, bdaddress, sizeof(bdaddress), S_IWUSR | S_IRUGO);
 MODULE_PARM_DESC(bdaddress, "BT MAC ADDRESS");
+#endif
 
 static uint32_t marvel_serial_debug_table[] = {
 	/* config as serial debug uart */
@@ -1036,20 +1047,6 @@ static struct perflock_platform_data marvel_perflock_data = {
 	.perf_acpu_table = marvel_perf_acpu_table,
 	.table_size = ARRAY_SIZE(marvel_perf_acpu_table),
 };
-
-#ifdef CONFIG_SERIAL_MSM_HS
-static struct msm_serial_hs_platform_data msm_uart_dm1_pdata = {
-	.rx_wakeup_irq = MSM_GPIO_TO_INT(MARVEL_GPIO_BT_HOST_WAKE),
-	.inject_rx_on_wakeup = 0,
-	.cpu_lock_supported = 1,
-
-	/* for bcm */
-	.bt_wakeup_pin_supported = 1,
-	.bt_wakeup_pin = MARVEL_GPIO_BT_CHIP_WAKE,
-	.host_wakeup_pin = MARVEL_GPIO_BT_HOST_WAKE,
-
-};
-#endif
 
 static ssize_t marvel_virtual_keys_show(struct kobject *kobj,
 			struct kobj_attribute *attr, char *buf)
@@ -1091,17 +1088,13 @@ static struct attribute_group marvel_properties_attr_group = {
 static void __init marvel_init(void)
 {
 	int rc;
-	int sku_id = 0;
 	char *cid = NULL;
 	struct kobject *properties_kobj;
 
 	printk("marvel_init() revision = 0x%X\n", system_rev);
 	msm_clock_init();
 	board_get_cid_tag(&cid);
-	sku_id = board_get_sku_tag();
 
-	if (sku_id)
-		printk(KERN_INFO "Marvel show_skuid: 0x%x\n", sku_id);
 	/* for bcm */
 	bt_export_bd_address();
 
@@ -1134,7 +1127,9 @@ static void __init marvel_init(void)
 
 #ifdef CONFIG_SERIAL_MSM_HS
 	msm_device_uart_dm1.dev.platform_data = &msm_uart_dm1_pdata;
+#ifndef CONFIG_SERIAL_MSM_HS_PURE_ANDROID
 	msm_device_uart_dm1.name = "msm_serial_hs_bcm";	/* for bcm */
+#endif
 	msm_add_serial_devices(3);
 #else
 	msm_add_serial_devices(0);
@@ -1157,6 +1152,9 @@ static void __init marvel_init(void)
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	config_marvel_usb_id_gpios(0);
 	platform_device_register(&msm_device_hsusb);
+#ifdef CONFIG_USB_ANDROID_RNDIS
+	platform_device_register(&rndis_device);
+#endif
 	platform_device_register(&usb_mass_storage_device);
 	platform_device_register(&android_usb_device);
 #endif
@@ -1193,27 +1191,11 @@ static void __init marvel_init(void)
 
 	msm_device_i2c_init();
 	platform_add_devices(devices, ARRAY_SIZE(devices));
-
-	if ((sku_id & 0xFFF00) == 0x2AB00) {
-		printk(KERN_INFO "Marvel#B14: use BMA250\n");
-		i2c_register_board_info(0, i2c_devices_B14,
-				ARRAY_SIZE(i2c_devices_B14));
-
-		/* probe g-sensor driver */
-		i2c_register_board_info(0, i2c_bma250_devices,
-		ARRAY_SIZE(i2c_bma250_devices));
-
-	} else {
-		printk(KERN_INFO "Marvel: use BMA023\n");
-		i2c_register_board_info(0, i2c_devices,
-				ARRAY_SIZE(i2c_devices));
-	}
+	i2c_register_board_info(0, i2c_devices, ARRAY_SIZE(i2c_devices));
 
 	marvel_init_panel();
 
 	marvel_init_keypad();
-
-	marvel_wifi_init();
 
 	msm_init_pmic_vibrator(2800);
 }

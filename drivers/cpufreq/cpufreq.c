@@ -28,6 +28,7 @@
 #include <linux/cpu.h>
 #include <linux/completion.h>
 #include <linux/mutex.h>
+#include <linux/sched.h>
 
 #define dprintk(msg...) cpufreq_debug_printk(CPUFREQ_DEBUG_CORE, \
 						"cpufreq-core", msg)
@@ -87,21 +88,6 @@ EXPORT_SYMBOL_GPL(lock_policy_rwsem_read);
 
 lock_policy_rwsem(write, cpu);
 EXPORT_SYMBOL_GPL(lock_policy_rwsem_write);
-
-int trylock_policy_rwsem_write(int cpu) {
-	int policy_cpu = per_cpu(cpufreq_policy_cpu, cpu);
-	BUG_ON(policy_cpu == -1);
-	if (down_write_trylock(&per_cpu(cpu_policy_rwsem, policy_cpu))) {
-		if (cpu_online(cpu)) {
-			return 0;
-		}
-		else {
-			up_write(&per_cpu(cpu_policy_rwsem, policy_cpu));
-		}
-	}
-	return -1;
-}
-EXPORT_SYMBOL_GPL(trylock_policy_rwsem_write);
 
 void unlock_policy_rwsem_read(int cpu)
 {
@@ -423,14 +409,21 @@ static int cpufreq_parse_governor(char *str_governor, unsigned int *policy,
 		t = __find_governor(str_governor);
 
 		if (t == NULL) {
-			int ret;
+			char *name = kasprintf(GFP_KERNEL, "cpufreq_%s",
+								str_governor);
 
-			mutex_unlock(&cpufreq_governor_mutex);
-			ret = request_module("cpufreq_%s", str_governor);
-			mutex_lock(&cpufreq_governor_mutex);
+			if (name) {
+				int ret;
 
-			if (ret == 0)
-				t = __find_governor(str_governor);
+				mutex_unlock(&cpufreq_governor_mutex);
+				ret = request_module("%s", name);
+				mutex_lock(&cpufreq_governor_mutex);
+
+				if (ret == 0)
+					t = __find_governor(str_governor);
+			}
+
+			kfree(name);
 		}
 
 		if (t != NULL) {
@@ -925,8 +918,8 @@ static int cpufreq_add_dev_interface(unsigned int cpu,
 
 	spin_lock_irqsave(&cpufreq_driver_lock, flags);
 	for_each_cpu(j, policy->cpus) {
-		if (!cpu_online(j))
-			continue;
+	if (!cpu_online(j))
+		continue;
 		per_cpu(cpufreq_cpu_data, j) = policy;
 		per_cpu(cpufreq_policy_cpu, j) = policy->cpu;
 	}
@@ -1213,28 +1206,12 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
 		cpufreq_driver->exit(data);
 	unlock_policy_rwsem_write(cpu);
 
-	cpufreq_debug_enable_ratelimit();
-
-#ifdef CONFIG_HOTPLUG_CPU
-	/* when the CPU which is the parent of the kobj is hotplugged
-	 * offline, check for siblings, and create cpufreq sysfs interface
-	 * and symlinks
-	 */
-	if (unlikely(cpumask_weight(data->cpus) > 1)) {
-		/* first sibling now owns the new sysfs dir */
-		cpumask_clear_cpu(cpu, data->cpus);
-		cpufreq_add_dev(get_cpu_sysdev(cpumask_first(data->cpus)));
-
-		/* finally remove our own symlink */
-		lock_policy_rwsem_write(cpu);
-		__cpufreq_remove_dev(sys_dev);
-	}
-#endif
-
 	free_cpumask_var(data->related_cpus);
 	free_cpumask_var(data->cpus);
 	kfree(data);
+	per_cpu(cpufreq_cpu_data, cpu) = NULL;
 
+	cpufreq_debug_enable_ratelimit();
 	return 0;
 }
 
@@ -1393,7 +1370,7 @@ static int cpufreq_suspend(struct sys_device *sysdev, pm_message_t pmsg)
 		goto out;
 
 	if (cpufreq_driver->suspend) {
-		ret = cpufreq_driver->suspend(cpu_policy);
+		ret = cpufreq_driver->suspend(cpu_policy, pmsg);
 		if (ret)
 			printk(KERN_ERR "cpufreq: suspend failed in ->suspend "
 					"step on CPU %u\n", cpu_policy->cpu);
@@ -1551,6 +1528,12 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 		target_freq, relation);
 	if (cpu_online(policy->cpu) && cpufreq_driver->target)
 		retval = cpufreq_driver->target(policy, target_freq, relation);
+	if (likely(retval != -EINVAL)) {
+		if (target_freq == policy->max)
+			cpu_nonscaling(policy->cpu);
+		else
+			cpu_scaling(policy->cpu);
+	}
 
 	return retval;
 }

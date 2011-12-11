@@ -292,8 +292,7 @@ struct usb_composite_driver {
 	void			(*suspend)(struct usb_composite_dev *);
 	void			(*resume)(struct usb_composite_dev *);
 
-	int			(*enable_function)(struct usb_function *f,
-							 int enable);
+	void			(*enable_function)(struct usb_function *f, int enable);
 };
 
 extern int usb_composite_register(struct usb_composite_driver *);

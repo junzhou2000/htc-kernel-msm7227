@@ -393,7 +393,7 @@ int gpio_event_matrix_func(struct gpio_event_input_devs *input_devs,
 		/* TODO: disable scanning */
 		if (mi->detect_phone_status == 0) {
 			return 0;
-		} else {
+
 			phone_call_status = gpio_event_get_phone_call_status() & 0x01;
 			fm_radio_status = gpio_event_get_fm_radio_status() & 0x01;
 			KEY_LOGI("%s: mi->ninputs: %d, func&0x01 = %d, phone_call_status=%d, fm_radio_status=%d\n", __func__, mi->ninputs, func & 0x01, phone_call_status, fm_radio_status);

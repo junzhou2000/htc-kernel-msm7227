@@ -57,7 +57,6 @@ MODULE_ALIAS("mmc:block");
 #define MMC_NUM_MINORS	(256 >> MMC_SHIFT)
 
 extern int board_emmc_boot(void);
-extern int mmc_reinit_card(struct mmc_host *host);
 
 static DECLARE_BITMAP(dev_use, MMC_NUM_MINORS);
 
@@ -304,10 +303,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	int retries = 3;
 	if (mmc_bus_needs_resume(card->host)) {
-		do {
-			err = mmc_resume_bus(card->host);
-			retries--;
-		} while (err && retries);
+		err = mmc_resume_bus(card->host);
 		if (err) {
 			if (mmc_card_sd(card))
 				remove_card(card->host);
@@ -316,7 +312,6 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			spin_unlock_irq(&md->lock);
 			return 0;
 		}
-		retries = 3;
 		mmc_blk_set_blksize(md, card);
 
 		if (mmc_card_mmc(card)) {
@@ -611,7 +606,8 @@ recovery:
 				goto cmd_err;
 			printk(KERN_INFO "%s: reinit card\n",
 				mmc_hostname(card->host));
-			err = mmc_reinit_card(card->host);
+			card->host->bus_resume_flags |= MMC_BUSRESUME_NEEDS_RESUME;
+			err = mmc_resume_bus(card->host);
 			if (!err) {
 				mmc_blk_set_blksize(md, card);
 				continue;

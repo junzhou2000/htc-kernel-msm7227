@@ -9,14 +9,17 @@
 #include <asm/gpio.h>
 #include <asm/io.h>
 #include <linux/skbuff.h>
-#include <linux/wifi_tiwlan.h>
+#ifdef CONFIG_BCM4329_PURE_ANDROID
+#include <linux/wlan_plat.h>
+#else
+#include <linux/wifi_bcm.h>
+#endif
 
 #include "board-marvel.h"
 
 int marvel_wifi_power(int on);
 int marvel_wifi_reset(int on);
 int marvel_wifi_set_carddetect(int on);
-int marvel_wifi_get_mac_addr(unsigned char *buf);
 
 #define PREALLOC_WLAN_NUMBER_OF_SECTIONS	4
 #define PREALLOC_WLAN_NUMBER_OF_BUFFERS		160
@@ -79,21 +82,23 @@ static struct resource marvel_wifi_resources[] = {
 		.name		= "bcm4329_wlan_irq",
 		.start		= MSM_GPIO_TO_INT(MARVEL_GPIO_WIFI_IRQ),
 		.end		= MSM_GPIO_TO_INT(MARVEL_GPIO_WIFI_IRQ),
-#ifdef HW_OOB
-		.flags          = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE,
+#ifdef CONFIG_BCM4329_PURE_ANDROID
+.flags = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE,
 #else
-		.flags          = IORESOURCE_IRQ | IORESOURCE_IRQ_LOWEDGE,
+.flags = IORESOURCE_IRQ | IORESOURCE_IRQ_LOWEDGE,
 #endif
 	},
 };
 
 static struct wifi_platform_data marvel_wifi_control = {
-	.set_power      = marvel_wifi_power,
-	.set_reset      = marvel_wifi_reset,
+	.set_power = marvel_wifi_power,
+	.set_reset = marvel_wifi_reset,
 	.set_carddetect = marvel_wifi_set_carddetect,
-	.mem_prealloc   = marvel_wifi_mem_prealloc,
-	.get_mac_addr	= marvel_wifi_get_mac_addr,
-	.dot11n_enable  = 1,
+	.mem_prealloc = marvel_wifi_mem_prealloc,
+#ifndef CONFIG_BCM4329_PURE_ANDROID
+	.dot11n_enable = 1,
+	.cscan_enable = 1,
+#endif
 };
 
 static struct platform_device marvel_wifi_device = {
@@ -136,147 +141,21 @@ static unsigned marvel_wifi_update_nvs(char *str)
 	return 0;
 }
 
-#ifdef HW_OOB
-static unsigned strip_nvs_param(char* param)
-{
-	unsigned char *nvs_data;
-
-	unsigned param_len;
-	int start_idx, end_idx;
-
-	unsigned char *ptr;
-	unsigned len;
-
-	if (!param)
-		return -EINVAL;
-	ptr = get_wifi_nvs_ram();
-	/* Size in format LE assumed */
-	memcpy(&len, ptr + NVS_LEN_OFFSET, sizeof(len));
-
-	/* the last bye in NVRAM is 0, trim it */
-	if (ptr[NVS_DATA_OFFSET + len -1] == 0)
-		len -= 1;
-
-	nvs_data = ptr + NVS_DATA_OFFSET;
-
-	param_len = strlen(param);
-
-	/* search param */
-	for (start_idx = 0; start_idx < len - param_len; start_idx++) {
-		if (memcmp(&nvs_data[start_idx], param, param_len) == 0) {
-			break;
-		}
-	}
-
-	end_idx = 0;
-	if (start_idx < len - param_len) {
-		/* search end-of-line */
-		for (end_idx = start_idx + param_len; end_idx < len; end_idx++) {
-			if (nvs_data[end_idx] == '\n' || nvs_data[end_idx] == 0) {
-				break;
-			}
-		}
-	}
-
-	if (start_idx < end_idx) {
-		/* move the remain data forward */
-		for (; end_idx + 1 < len; start_idx++, end_idx++) {
-			nvs_data[start_idx] = nvs_data[end_idx+1];
-		}
-		len = len - (end_idx - start_idx + 1);
-		memcpy(ptr + NVS_LEN_OFFSET, &len, sizeof(len));
-	}
-	return 0;
-}
-#endif
-
-#define WIFI_MAC_PARAM_STR     "macaddr="
-#define WIFI_MAX_MAC_LEN       17 /* XX:XX:XX:XX:XX:XX */
-
-static uint
-get_mac_from_wifi_nvs_ram(char* buf, unsigned int buf_len)
-{
-	unsigned char *nvs_ptr;
-	unsigned char *mac_ptr;
-	uint len = 0;
-
-	if (!buf || !buf_len) {
-		return 0;
-	}
-
-	nvs_ptr = get_wifi_nvs_ram();
-	if (nvs_ptr) {
-		nvs_ptr += NVS_DATA_OFFSET;
-	}
-
-	mac_ptr = strstr(nvs_ptr, WIFI_MAC_PARAM_STR);
-	if (mac_ptr) {
-		mac_ptr += strlen(WIFI_MAC_PARAM_STR);
-
-		/* skip leading space */
-		while (mac_ptr[0] == ' ') {
-			mac_ptr++;
-		}
-
-		/* locate end-of-line */
-		len = 0;
-		while (mac_ptr[len] != '\r' && mac_ptr[len] != '\n' &&
-			mac_ptr[len] != '\0') {
-			len++;
-		}
-
-		if (len > buf_len) {
-			len = buf_len;
-		}
-		memcpy(buf, mac_ptr, len);
-	}
-
-	return len;
-}
-
-#define ETHER_ADDR_LEN 6
-int marvel_wifi_get_mac_addr(unsigned char *buf)
-{
-	static u8 ether_mac_addr[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0xFF};
-	char mac[WIFI_MAX_MAC_LEN];
-	unsigned mac_len;
-	unsigned int macpattern[ETHER_ADDR_LEN];
-	int i;
-
-	mac_len = get_mac_from_wifi_nvs_ram(mac, WIFI_MAX_MAC_LEN);
-	if (mac_len > 0) {
-		//Mac address to pattern
-		sscanf( mac, "%02x:%02x:%02x:%02x:%02x:%02x",
-		&macpattern[0], &macpattern[1], &macpattern[2],
-		&macpattern[3], &macpattern[4], &macpattern[5]
-		);
-
-		for(i = 0; i < ETHER_ADDR_LEN; i++) {
-			ether_mac_addr[i] = (u8)macpattern[i];
-		}
-	}
-
-	memcpy(buf, ether_mac_addr, sizeof(ether_mac_addr));
-
-	printk("marvel_wifi_get_mac_addr = %02x %02x %02x %02x %02x %02x \n",
-		ether_mac_addr[0],ether_mac_addr[1],ether_mac_addr[2],ether_mac_addr[3],ether_mac_addr[4],ether_mac_addr[5]);
-
-	return 0;
-}
-
-int __init marvel_wifi_init(void)
+static int __init marvel_wifi_init(void)
 {
 	int ret;
 
-	printk(KERN_INFO "%s: start\n", __func__);
-#ifdef HW_OOB
-	strip_nvs_param("sd_oobonly");
-#else
+	if (!machine_is_marvel())
+		return 0;
+
+	printk("%s: start\n", __func__);
 	marvel_wifi_update_nvs("sd_oobonly=1\n");
-#endif
 	marvel_wifi_update_nvs("btc_params80=0\n");
 	marvel_wifi_update_nvs("btc_params6=30\n");
+  	marvel_wifi_update_nvs("btc_params70=0x32\n");
 	marvel_init_wifi_mem();
 	ret = platform_device_register(&marvel_wifi_device);
-	return ret;
+        return ret;
 }
+
+device_initcall(marvel_wifi_init);

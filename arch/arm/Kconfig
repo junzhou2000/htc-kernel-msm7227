@@ -22,7 +22,6 @@ config ARM
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_BZIP2
 	select HAVE_KERNEL_LZMA
-	select HAVE_KERNEL_XZ
 	select HAVE_PERF_EVENTS
 	select PERF_USE_VMALLOC
 	help
@@ -946,6 +945,10 @@ config ARM_TIMER_SP804
 
 source arch/arm/mm/Kconfig
 
+config DONT_RESERVE_FROM_MOVABLE_ZONE
+	def_bool y
+	depends on MEMORY_HOTPLUG
+
 config RESERVE_FIRST_PAGE
 	bool
 	default n
@@ -981,7 +984,7 @@ endif
 
 config ARM_ERRATA_411920
 	bool "ARM errata: Invalidation of the Instruction Cache operation can fail"
-	depends on CPU_V6
+	depends on CPU_V6 && !SMP
 	help
 	  Invalidation of the Instruction Cache operation can
 	  fail. This erratum is present in 1136 (before r1p4), 1156 and 1176.
@@ -1066,18 +1069,6 @@ config KSAPI
           counter statistics. It can monitor the counter statistics for
           Scorpion processor supported hardware performance counters on a per
           thread basis or AXI counters on an overall system basis.
-
-config ARM_ERRATA_364296
-	bool "ARM errata: Possible cache data corruption with hit-under-miss enabled"
-	depends on CPU_V6 && !SMP
-	help
-	  This options enables the workaround for the 364296 ARM1136
-	  r0p2 erratum (possible cache data corruption with
-	  hit-under-miss enabled). It sets the undocumented bit 31 in
-	  the auxiliary control register and the FI bit in the control
-	  register, thus disabling hit-under-miss without putting the
-	  processor into full low interrupt latency mode. ARM11MPCore
-	  is not affected.
 
 endmenu
 
@@ -1361,8 +1352,7 @@ config ARCH_MEMORY_REMOVE
 	depends on MEMORY_HOTPLUG
 
 config DONT_RESERVE_FROM_MOVABLE_ZONE
-	def_bool y
-	depends on MEMORY_HOTPLUG
+	def_bool n
 
 config LEDS
 	bool "Timer and CPU usage LEDs"
@@ -1430,16 +1420,6 @@ config ALIGNMENT_TRAP
 	  here, which has a severe performance impact. This is necessary for
 	  correct operation of some network protocols. With an IP-only
 	  configuration it is safe to say N, otherwise say Y.
-
-config ALLOW_CPU_ALIGNMENT
-	bool "Allow CPU-based alignment handling"
-	default y if ARCH_MSM_SCORPION || ARCH_MSM_SCORPIONMP
-	help
-	  Advanced ARM processors, such as the Cortex series and ARMv7-based
-	  CPUS are capable of performing unaligned accesses for many types of
-	  memory accesses.  Typically, using a cpu-based alignment fixup is
-	  faster than doing such a fixup in software.  For best performance
-	  on advanced CPUs, say Y here.
 
 config UACCESS_WITH_MEMCPY
 	bool "Use kernel mem{cpy,set}() for {copy_to,clear}_user() (EXPERIMENTAL)"
@@ -1577,16 +1557,6 @@ config ATAGS_PROC
 	help
 	  Should the atags used to boot the kernel be exported in an "atags"
 	  file in procfs. Useful with kexec.
-
-config AUTO_ZRELADDR
-	bool "Auto calculation of the decompressed kernel image address"
-	depends on !ZBOOT_ROM && !ARCH_U300
-	help
-	  ZRELADDR is the physical address where the decompressed kernel
-	  image will be placed. If AUTO_ZRELADDR is selected, the address
-	  will be determined at run-time by masking the current IP with
-	  0xf8000000. This assumes the zImage being placed in the first 128MB
-	  from start of memory.
 
 endmenu
 

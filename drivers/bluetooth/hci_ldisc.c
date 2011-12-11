@@ -210,6 +210,7 @@ static int hci_uart_close(struct hci_dev *hdev)
 static int hci_uart_send_frame(struct sk_buff *skb)
 {
 	struct hci_dev* hdev = (struct hci_dev *) skb->dev;
+	struct tty_struct *tty;
 	struct hci_uart *hu;
 
 	if (!hdev) {
@@ -221,6 +222,7 @@ static int hci_uart_send_frame(struct sk_buff *skb)
 		return -EBUSY;
 
 	hu = (struct hci_uart *) hdev->driver_data;
+	tty = hu->tty;
 
 	BT_DBG("%s: type %d len %d", hdev->name, bt_cb(skb)->pkt_type, skb->len);
 
@@ -462,11 +464,18 @@ static int hci_uart_tty_ioctl(struct tty_struct *tty, struct file * file,
 
 	switch (cmd) {
 	case HCIUARTSETPROTO:
-		if (!test_and_set_bit(HCI_UART_PROTO_SET, &hu->flags)) {
+		if (!test_and_set_bit(HCI_UART_PROTO_SET_IN_PROGRESS,
+			&hu->flags) && !test_bit(HCI_UART_PROTO_SET,
+				&hu->flags)) {
 			err = hci_uart_set_proto(hu, arg);
 			if (err) {
-				clear_bit(HCI_UART_PROTO_SET, &hu->flags);
+				clear_bit(HCI_UART_PROTO_SET_IN_PROGRESS,
+						&hu->flags);
 				return err;
+			} else {
+				set_bit(HCI_UART_PROTO_SET, &hu->flags);
+				clear_bit(HCI_UART_PROTO_SET_IN_PROGRESS,
+						&hu->flags);
 			}
 		} else
 			return -EBUSY;

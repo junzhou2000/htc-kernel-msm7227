@@ -833,7 +833,7 @@ static struct platform_suspend_ops msm_pm_ops = {
 	.valid		= suspend_valid_only_mem,
 };
 
-static uint32_t restart_reason = RESTART_REASON_RAMDUMP;
+static uint32_t restart_reason = 0x776655AA;
 
 static int msm_wakeup_after;	/* default, no wakeup by alarm */
 static int msm_power_wakeup_after(const char *val, struct kernel_param *kp)
@@ -864,11 +864,8 @@ static int set_offmode_alarm(void)
 
 	getnstimeofday(&rtc_now);
 	for (i = 0; i < offalarm_size; i++) {
-		if (offalarm[i] > rtc_now.tv_sec) {
-			next_alarm_interval = offalarm[i] - rtc_now.tv_sec;
-			if (next_alarm_interval > 604800)	/* ignore alarm if the interval of timer is over one week */
-				continue;
-			next_alarm_interval = next_alarm_interval * 1000;	/* convert to msec */
+		next_alarm_interval = (offalarm[i] - rtc_now.tv_sec) * 1000;
+		if (next_alarm_interval > 0) {
 			if (msm_wakeup_after == 0)
 				msm_wakeup_after = next_alarm_interval;
 			else if (next_alarm_interval < msm_wakeup_after)
@@ -882,10 +879,11 @@ static int set_offmode_alarm(void)
 
 static void msm_pm_power_off(void)
 {
+	printk(KERN_INFO "msm_pm_power_off:wakeup after %d\r\n", msm_wakeup_after);
+
 #ifdef CONFIG_HTC_OFFMODE_ALARM
 	set_offmode_alarm();
 #endif
-	printk(KERN_INFO "msm_pm_power_off:wakeup after %d\r\n", msm_wakeup_after);
 	if (msm_wakeup_after)
 		msm_proc_comm(PCOM_SET_RTC_ALARM, &msm_wakeup_after, 0);
 
@@ -929,7 +927,7 @@ static void msm_pm_restart(char str, const char *cmd)
 	msm_pm_flush_console();
 
 	/*  always reboot device through proc comm */
-	if (restart_reason == RESTART_REASON_RIL_FATAL)
+	if (restart_reason == 0x6f656d99)
 		msm_proc_comm(PCOM_RESET_CHIP_IMM, &restart_reason, 0);
 	else
 		msm_proc_comm(PCOM_RESET_CHIP, &restart_reason, 0);
@@ -941,8 +939,8 @@ static void msm_pm_restart(char str, const char *cmd)
 	/* wait 2 seconds to let radio reset device after the final EFS sync*/
 	mdelay(2000);
 #else
-	/* In case Radio is dead, reset device after notify Radio 10 seconds */
-	mdelay(10000);
+	/* In case Radio is dead, reset device after notify Radio 5 seconds */
+	mdelay(5000);
 #endif
 
 	/* hard reboot if possible */
@@ -956,23 +954,21 @@ static void msm_pm_restart(char str, const char *cmd)
 
 static int msm_reboot_call(struct notifier_block *this, unsigned long code, void *_cmd)
 {
-	if (code == SYS_RESTART) {
+	if((code == SYS_RESTART) && _cmd) {
 		char *cmd = _cmd;
-		if (cmd == NULL) {
-			restart_reason = RESTART_REASON_REBOOT;
-		} else if (!strcmp(cmd, "bootloader")) {
-			restart_reason = RESTART_REASON_BOOTLOADER;
+		if (!strcmp(cmd, "bootloader")) {
+			restart_reason = 0x77665500;
 		} else if (!strcmp(cmd, "recovery")) {
-			restart_reason = RESTART_REASON_RECOVERY;
+			restart_reason = 0x77665502;
 		} else if (!strcmp(cmd, "eraseflash")) {
-			restart_reason = RESTART_REASON_ERASE_FLASH;
+			restart_reason = 0x776655EF;
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned code = simple_strtoul(cmd + 4, 0, 16) & 0xff;
-			restart_reason = RESTART_REASON_OEM_BASE | code;
+			restart_reason = 0x6f656d00 | code;
 		} else if (!strcmp(cmd, "force-hard")) {
-			restart_reason = RESTART_REASON_RAMDUMP;
+			restart_reason = 0x776655AA;
 		} else {
-			restart_reason = RESTART_REASON_REBOOT;
+			restart_reason = 0x77665501;
 		}
 	}
 	return NOTIFY_DONE;

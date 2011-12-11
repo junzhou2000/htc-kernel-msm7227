@@ -124,7 +124,6 @@
 
 /* 35mm headset */
 #define MARVELC_GPIO_35MM_HEADSET_DET    (83)
-#define MARVELC_GPIO_MIC_2V5_EN          (121)
 
 /*Camera AF VCM POWER*/
 #define MARVELC_GPIO_VCM_PD              (126)
@@ -139,6 +138,5 @@
 int __init marvelc_init_keypad(void);
 int marvelc_init_mmc(unsigned int sys_rev);
 int __init marvelc_init_panel(void);
-int __init marvelc_wifi_init(void);
 #endif /* GUARD */
 

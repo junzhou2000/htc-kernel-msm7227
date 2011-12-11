@@ -59,6 +59,7 @@ int mmc_assume_removable;
 #else
 int mmc_assume_removable = 1;
 #endif
+EXPORT_SYMBOL(mmc_assume_removable);
 module_param_named(removable, mmc_assume_removable, bool, 0644);
 MODULE_PARM_DESC(
 	removable,
@@ -214,7 +215,6 @@ static void mmc_wait_done(struct mmc_request *mrq)
 struct msmsdcc_host;
 void msmsdcc_request_end(struct msmsdcc_host *host, struct mmc_request *mrq);
 void msmsdcc_stop_data(struct msmsdcc_host *host);
-void msmsdcc_reset_and_restore(struct msmsdcc_host *host);
 
 /**
  *	mmc_wait_for_req - start a request and wait for completion
@@ -228,13 +228,10 @@ void msmsdcc_reset_and_restore(struct msmsdcc_host *host);
 void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 {
 #ifdef CONFIG_WIMAX
-#ifdef CONFIG_WIMAX_MMC_TIMEOUT
 	int ret = 0;
 	struct msmsdcc_host *msm_host = mmc_priv(host);
-	int timeout = 0;
 #endif
-#endif
-	
+
 	DECLARE_COMPLETION_ONSTACK(complete);
 
 	mrq->done_data = &complete;
@@ -244,30 +241,22 @@ void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 
 #ifdef CONFIG_WIMAX
 #ifdef CONFIG_WIMAX_MMC
-#ifdef CONFIG_WIMAX_MMC_TIMEOUT
 	if ( !(strcmp(mmc_hostname(host), CONFIG_WIMAX_MMC))) {
-
-#ifdef CONFIG_WIMAX_REQ_TIMEOUT
-		ret = wait_for_completion_timeout(&complete, msecs_to_jiffies(CONFIG_WIMAX_REQ_TIMEOUT));
-		timeout = CONFIG_WIMAX_REQ_TIMEOUT;
-#else
 		ret = wait_for_completion_timeout(&complete, msecs_to_jiffies(5000));
-		timeout = 5000;
-#endif
-		if (ret <= 0) {
-			printk("[ERR] %s: %s wait_for_completion_timeout in %d!\n", __func__, mmc_hostname(host), timeout);
 
-			msmsdcc_reset_and_restore(msm_host);
-
+		if (ret <= 0) {		
+			printk("[ERR] %s: %s wait_for_completion_timeout!\n", __func__, mmc_hostname(host));
+			
 			msmsdcc_stop_data(msm_host);
+	
 			mrq->cmd->error = -ETIMEDOUT;
-			msmsdcc_request_end(msm_host, mrq);
+			msmsdcc_request_end(msm_host, mrq); 	
 		}
 	} else
 #endif
 #endif
-#endif
-		wait_for_completion_io(&complete);
+		wait_for_completion(&complete);
+
 }
 
 EXPORT_SYMBOL(mmc_wait_for_req);
@@ -347,15 +336,15 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 
 		timeout_us = data->timeout_ns / 1000;
 		if ((card->host->ios.clock / 1000) > 0)
-			timeout_us += data->timeout_clks * 1000 /
-				(card->host->ios.clock / 1000);
+		timeout_us += data->timeout_clks * 1000 /
+			(card->host->ios.clock / 1000);
 
 		if (data->flags & MMC_DATA_WRITE)
 			/*
 			 * The limit is really 250 ms, but that is
 			 * insufficient for some crappy cards.
 			 */
-			limit_us = 800000;
+			limit_us = 300000;
 		else
 			limit_us = 100000;
 
@@ -527,13 +516,6 @@ int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
 	might_sleep();
 
 	add_wait_queue(&host->wq, &wait);
-#ifdef CONFIG_PM_RUNTIME
-	while(mmc_dev(host)->power.runtime_status == RPM_SUSPENDING) {
-		if (host->suspend_task == current)
-			break;
-		msleep(15);
-	}
-#endif
 	spin_lock_irqsave(&host->lock, flags);
 	while (1) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -584,11 +566,11 @@ int mmc_try_claim_host(struct mmc_host *host)
 EXPORT_SYMBOL(mmc_try_claim_host);
 
 /**
- *  mmc_do_release_host - release a claimed host
- *  @host: mmc host to release
+ *	mmc_do_release_host - release a claimed host
+ *	@host: mmc host to release
  *
- *  If you successfully claimed a host, this function will
- *  release it again.
+ *	If you successfully claimed a host, this function will
+ *	release it again.
  */
 void mmc_do_release_host(struct mmc_host *host)
 {
@@ -1153,29 +1135,6 @@ void mmc_detect_change(struct mmc_host *host, unsigned long delay)
 
 EXPORT_SYMBOL(mmc_detect_change);
 
-int mmc_reinit_card(struct mmc_host *host)
-{
-	int err = 0;
-	printk(KERN_INFO "%s: %s\n", mmc_hostname(host),
-		__func__);
-
-	mmc_bus_get(host);
-	if (host->bus_ops && !host->bus_dead &&
-		host->bus_ops->resume) {
-		if (host->card && mmc_card_sd(host->card)) {
-			mmc_power_off(host);
-			mdelay(5);
-		}
-		mmc_power_up(host);
-		err = host->bus_ops->resume(host);
-	}
-
-	mmc_bus_put(host);
-	printk(KERN_INFO "%s: %s return %d\n", mmc_hostname(host),
-		__func__, err);
-	return err;
-}
-
 void mmc_remove_sd_card(struct work_struct *work)
 {
 	struct mmc_host *host =
@@ -1210,16 +1169,20 @@ void mmc_rescan(struct work_struct *work)
 
 	mmc_bus_get(host);
 
-	/* if there is a card registered, check whether it is still present */
-	if ((host->bus_ops != NULL) && host->bus_ops->detect && !host->bus_dead) {
+	/*
+	 * if there is a _removable_ card registered, check whether it is
+	 * still present
+	 */
+	if (host->bus_ops && host->bus_ops->detect && !host->bus_dead
+	    && !(host->caps & MMC_CAP_NONREMOVABLE)) {
 		host->bus_ops->detect(host);
-
 		/* If the card was removed the bus will be marked
 		 * as dead - extend the wakelock so userspace
 		 * can respond */
 		if (host->bus_dead)
 			extend_wakelock = 1;
 	}
+
 	mmc_bus_put(host);
 
 
